@@ -135,6 +135,8 @@ nslookup ad-g.doubleclick.net 8.8.8.8
 - **Before:** returned a real Google IP, because the query went straight to `8.8.8.8` and bypassed filtering.
 - **After:** returned `0.0.0.0`. The query was silently intercepted, sent to Unbound, and filtered.
 
+![Before the NAT redirect: query to 8.8.8.8 bypasses filtering](screenshots/nat-redirect-before.png)
+
 ### 2. Block outbound DNS-over-TLS (TCP/UDP 853)
 **Firewall → Rules → LAN:** block, source LAN net, destination any, port `domain-s` (853), logging enabled, IPv4+IPv6.
 
@@ -146,6 +148,8 @@ Test-NetConnection 1.1.1.1 -Port 853
 PingSucceeded    : True
 TcpTestSucceeded : False
 ```
+![DoT blocked: ping succeeds, TCP 853 fails](screenshots/dot-block-test.png)
+
 The host can still reach `1.1.1.1`. **Only** encrypted DNS is blocked, which shows the control is targeted and doesn't break general connectivity. (This rule needed a rule-order fix; see the [case study](#case-study-2-the-block-rule-that-didnt-block).)
 
 ### 3. Encrypt the firewall's own upstream DNS (DNS-over-TLS to Quad9)
@@ -155,6 +159,8 @@ The host can still reach `1.1.1.1`. **Only** encrypted DNS is blocked, which sho
 |---|---|---|
 | `9.9.9.9` | 853 | `dns.quad9.net` |
 | `149.112.112.112` | 853 | `dns.quad9.net` |
+
+![Resolution working through the firewall after enabling DoT upstream](screenshots/dot-upstream-lookup.png)
 
 The ISP can no longer see or log the household's DNS lookups, and the **CN verification** protects against a spoofed resolver. The LAN DoT block doesn't affect this, because it only applies to traffic *from* LAN clients, not from the firewall itself.
 
@@ -193,6 +199,8 @@ Enter passphrase for key '.../id_ed25519':
 <admin>@OPNsense:~ $
 ```
 
+![Root SSH login refused](screenshots/ssh-root-denied.png)
+
 The `(publickey)` in the denial shows the server no longer even offers password authentication, so brute-force password guessing is off the table. Admin actions now go through a **named account plus sudo**, which provides accountability. Access is **LAN-only**, needs **something you have** (the private key), and needs **something you know** (the key passphrase).
 
 > **Recovery path:** the physical console still accepts the root password. It's documented, and the root password is stored offline.
@@ -210,6 +218,8 @@ The `(publickey)` in the denial shows the server no longer even offers password 
 | Interface | **LAN** | Alerts show the *internal* device involved; on WAN, NAT would hide every source behind the firewall's address |
 | Rulesets | ET Open: malware, exploit, scan, phishing, coinminer, attack_response; abuse.ch | Focused categories instead of "everything", to keep noise manageable |
 | Rule updates | Scheduled via cron | Signatures stay current without manual work |
+
+![Suricata general settings](screenshots/suricata-settings.png)
 
 ### Validation
 The usual test page, `testmynids.org`, has **expired**: it now returns a parked "domain for sale" page instead of the `uid=0(root)` payload, so no alert fired (see [case study 4](#case-study-4-the-ids-test-that-tested-nothing)). I validated with a **known-bad User-Agent** instead:
@@ -230,6 +240,8 @@ curl.exe -A "Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/bo
 | Interface | LAN |
 | HTTP user-agent | `Mozilla/5.0 (compatible; Nmap Scripting Engine; ...)` |
 
+![Suricata alert details: ET SCAN Possible Nmap User-Agent Observed](screenshots/suricata-alert.png)
+
 **Limitation to note:** the test had to use plain `http://`. A network IDS can't see inside TLS-encrypted traffic, so HTTPS payloads are invisible to signature matching without TLS interception. Metadata like DNS, SNI, and JA3/JA4 fingerprints, plus DNS filtering, partly covers that gap.
 
 ---
@@ -246,6 +258,8 @@ curl.exe -A "Mozilla/5.0 (compatible; Nmap Scripting Engine; https://nmap.org/bo
 4. Inspecting the JSON showed exact-domain keys with `wildcard: true`, and `grep -c '"ad.doubleclick.net"'` returned **0**. HaGeZi deliberately leaves out some Google ad domains to avoid breaking Shopping and search links.
 5. `drill ad-g.doubleclick.net @127.0.0.1` (a domain that **is** listed) returned `0.0.0.0`.
 
+![drill returning 0.0.0.0 for listed domains](screenshots/drill-blocked.png)
+
 **Root cause:** the blocking worked the whole time. My test domain wasn't on the list.
 
 ### Case study 2: The block rule that didn't block
@@ -261,6 +275,8 @@ pfctl -sr | grep -n -E "853|domain-s|igb0:network"
 ...
 92: block drop in log quick on igb0 inet proto tcp from (igb0:network) to any port = domain-s
 ```
+![pf ruleset before the fix: pass rules above the DoT block](screenshots/pfctl-rule-order-before.png)
+
 The `quick` **pass** rule matched first, so the block rule was never evaluated. pf uses first-match semantics for `quick` rules.
 
 **Fix:** re-ordered the rules (selecting only the block rule before using the GUI's move action) and re-applied.
@@ -271,6 +287,8 @@ The `quick` **pass** rule matched first, so the block rule was never evaluated. 
 ...
 95: pass in quick on igb0 inet from (igb0:network) to any ...
 ```
+![pf ruleset after the fix: DoT block evaluated first](screenshots/pfctl-rule-order-after.png)
+
 **Lesson:** check the **running** ruleset, not just the GUI. Rule order is one of the most common firewall misconfigurations.
 
 ### Case study 3: "Not in the sudoers file"
@@ -356,15 +374,17 @@ The `quick` **pass** rule matched first, so the block rule was never evaluated. 
 
 | File | Shows |
 |---|---|
-| `interfaces-overview.png` | WAN/LAN up, addressing |
-| `dnsbl-policy.png` | Blocklist policy configuration |
-| `drill-blocked.png` | `0.0.0.0` response for a blocklisted domain |
-| `nat-redirect-test.png` | `nslookup ... 8.8.8.8` returning `0.0.0.0` |
-| `pfctl-rule-order-before.png` / `-after.png` | Rule-order fix |
-| `dot-block-test.png` | `Test-NetConnection` ping OK / TCP 853 blocked |
-| `ssh-root-denied.png` | Root denied, key-based admin login |
-| `suricata-alert.png` | ET SCAN Nmap User-Agent alert details |
-| `speedtests.png` | Wired vs. Wi-Fi throughput |
+| [`drill-blocked.png`](screenshots/drill-blocked.png) | `0.0.0.0` responses for blocklisted domains |
+| [`nat-redirect-before.png`](screenshots/nat-redirect-before.png) | Query to `8.8.8.8` bypassing filtering, before the NAT redirect |
+| [`pfctl-rule-order-before.png`](screenshots/pfctl-rule-order-before.png) | Pass rules evaluated before the DoT block |
+| [`pfctl-rule-order-after.png`](screenshots/pfctl-rule-order-after.png) | DoT block evaluated first after the fix |
+| [`dot-block-test.png`](screenshots/dot-block-test.png) | Ping OK / TCP 853 blocked |
+| [`dot-upstream-lookup.png`](screenshots/dot-upstream-lookup.png) | Resolution working through the firewall with DoT upstream |
+| [`ssh-root-denied.png`](screenshots/ssh-root-denied.png) | Root SSH login refused (publickey only) |
+| [`suricata-settings.png`](screenshots/suricata-settings.png) | Suricata in PCAP/IDS mode |
+| [`suricata-alert.png`](screenshots/suricata-alert.png) | ET SCAN Nmap User-Agent alert details |
+
+**To be added:** NAT redirect "after" test (`0.0.0.0` from `8.8.8.8`), blocklist policy configuration, interfaces overview, and wired vs. Wi-Fi speed tests.
 
 ---
 
