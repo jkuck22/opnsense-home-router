@@ -1,17 +1,9 @@
 # Screenshots
 
-Evidence screenshots referenced in the main README's **Evidence / Screenshots** table.
+Evidence screenshots referenced in the main README. MAC addresses, MAC-derived IPv6 link-local addresses, usernames, serial numbers, and credentials are redacted or left out.
 
-Before uploading, redact MAC addresses, serial numbers, and anything showing credentials.
-
-Expected files:
-- `interfaces-overview.png`
-- `dnsbl-policy.png`
-- `drill-blocked.png`
-- `nat-redirect-test.png`
-- `pfctl-rule-order-before.png`
-- `pfctl-rule-order-after.png`
-- `dot-block-test.png`
-- `ssh-root-denied.png`
-- `suricata-alert.png`
-- `speedtests.png`
+Still to add:
+- `nat-redirect-after.png`: `nslookup ad-g.doubleclick.net 8.8.8.8` returning `0.0.0.0`
+- `dnsbl-policy.png`: Unbound blocklist policy
+- `interfaces-overview.png`: Interfaces overview (crop out IPv6 link-local addresses)
+- `speedtests.png`: wired vs. Wi-Fi throughput
